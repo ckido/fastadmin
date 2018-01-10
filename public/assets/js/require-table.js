@@ -156,7 +156,9 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                 // 添加按钮事件
                 $(toolbar).on('click', Table.config.addbtn, function () {
                     var ids = Table.api.selectedids(table);
-                    Fast.api.open(options.extend.add_url + (ids.length > 0 ? (options.extend.add_url.match(/(\?|&)+/) ? "&ids=" : "/ids/") + ids.join(",") : ''), __('Add'), $(this).data() || {});
+                    var url = options.extend.add_url;
+                    url = Table.api.replaceurl(url, {ids: ids.length > 0 ? ids.join(",") : 0}, table);
+                    Fast.api.open(url, __('Add'), $(this).data() || {});
                 });
                 // 导入按钮事件
                 if ($(Table.config.importbtn, toolbar).size() > 0) {
@@ -173,11 +175,13 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                 }
                 // 批量编辑按钮事件
                 $(toolbar).on('click', Table.config.editbtn, function () {
-                    var ids = Table.api.selectedids(table);
                     var that = this;
                     //循环弹出多个编辑框
-                    $.each(ids, function (i, j) {
-                        Fast.api.open(options.extend.edit_url + (options.extend.edit_url.match(/(\?|&)+/) ? "&ids=" : "/ids/") + j, __('Edit'), $(that).data() || {});
+                    $.each(table.bootstrapTable('getSelections'), function (index, row) {
+                        var url = options.extend.edit_url;
+                        row = $.extend({}, row ? row : {}, {ids: row[options.pk]});
+                        var url = Table.api.replaceurl(url, row, table);
+                        Fast.api.open(url, __('Edit'), $(that).data() || {});
                     });
                 });
                 // 批量操作按钮事件
@@ -241,7 +245,18 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                 });
                 $(table).on("click", "[data-id].btn-edit", function (e) {
                     e.preventDefault();
-                    Fast.api.open(options.extend.edit_url + (options.extend.edit_url.match(/(\?|&)+/) ? "&ids=" : "/ids/") + $(this).data("id"), __('Edit'), $(this).data() || {});
+                    var ids = $(this).data("id");
+                    var row = {};
+                    var options = table.bootstrapTable("getOptions");
+                    $.each(table.bootstrapTable('getData'), function (i, j) {
+                        if (j[options.pk] == ids) {
+                            row = j;
+                            return false;
+                        }
+                    });
+                    row.ids = ids;
+                    var url = Table.api.replaceurl(options.extend.edit_url, row, table);
+                    Fast.api.open(url, __('Edit'), $(this).data() || {});
                 });
                 $(table).on("click", "[data-id].btn-del", function (e) {
                     e.preventDefault();
@@ -264,8 +279,9 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
             multi: function (action, ids, table, element) {
                 var options = table.bootstrapTable('getOptions');
                 var data = element ? $(element).data() : {};
+                var ids = ($.isArray(ids) ? ids.join(",") : ids);
                 var url = typeof data.url !== "undefined" ? data.url : (action == "del" ? options.extend.del_url : options.extend.multi_url);
-                url = url + (url.match(/(\?|&)+/) ? "&ids=" : "/ids/") + ($.isArray(ids) ? ids.join(",") : ids);
+                url = this.replaceurl(url, {ids: ids}, table);
                 var params = typeof data.params !== "undefined" ? (typeof data.params == 'object' ? $.param(data.params) : data.params) : '';
                 var options = {url: url, data: {action: action, ids: ids, params: params}};
                 Fast.api.ajax(options, function (data) {
@@ -278,8 +294,12 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                     'click .btn-editone': function (e, value, row, index) {
                         e.stopPropagation();
                         e.preventDefault();
-                        var options = $(this).closest('table').bootstrapTable('getOptions');
-                        Fast.api.open(options.extend.edit_url + (options.extend.edit_url.match(/(\?|&)+/) ? "&ids=" : "/ids/") + row[options.pk], __('Edit'), $(this).data() || {});
+                        var table = $(this).closest('table');
+                        var options = table.bootstrapTable('getOptions');
+                        var ids = row[options.pk];
+                        row = $.extend({}, row ? row : {}, {ids: ids});
+                        var url = options.extend.edit_url;
+                        Fast.api.open(Table.api.replaceurl(url, row, table), __('Edit'), $(this).data() || {});
                     },
                     'click .btn-delone': function (e, value, row, index) {
                         e.stopPropagation();
@@ -321,9 +341,9 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                     return '<img class="' + classname + '" src="' + Fast.api.cdnurl(value) + '" />';
                 },
                 images: function (value, row, index) {
-                    value = value.toString();
+                    value = value === null ? '' : value.toString();
                     var classname = typeof this.classname !== 'undefined' ? this.classname : 'img-sm img-center';
-                    var arr = value.toString().split(',');
+                    var arr = value.split(',');
                     var html = [];
                     $.each(arr, function (i, value) {
                         value = value ? value : '/assets/img/blank.gif';
@@ -338,7 +358,7 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                     if (typeof this.custom !== 'undefined') {
                         colorArr = $.extend(colorArr, this.custom);
                     }
-                    value = value.toString();
+                    value = value === null ? '' : value.toString();
                     var color = value && typeof colorArr[value] !== 'undefined' ? colorArr[value] : 'primary';
                     value = value.charAt(0).toUpperCase() + value.slice(1);
                     //渲染状态
@@ -352,16 +372,17 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                     return '<a href="javascript:;" class="searchit" data-field="' + this.field + '" data-value="' + value + '">' + value + '</a>';
                 },
                 addtabs: function (value, row, index) {
-                    var url = Table.api.replaceurl(this.url, value, row, this.table);
+                    var url = Table.api.replaceurl(this.url, row, this.table);
                     var title = this.atitle ? this.atitle : __("Search %s", value);
                     return '<a href="' + Fast.api.fixurl(url) + '" class="addtabsit" data-value="' + value + '" title="' + title + '">' + value + '</a>';
                 },
                 dialog: function (value, row, index) {
-                    var url = Table.api.replaceurl(this.url, value, row, this.table);
+                    var url = Table.api.replaceurl(this.url, row, this.table);
                     var title = this.atitle ? this.atitle : __("View %s", value);
                     return '<a href="' + Fast.api.fixurl(url) + '" class="dialogit" data-value="' + value + '" title="' + title + '">' + value + '</a>';
                 },
                 flag: function (value, row, index) {
+                    value = value === null ? '' : value.toString();
                     var colorArr = {index: 'success', hot: 'warning', recommend: 'danger', 'new': 'info'};
                     //如果字段列有定义custom
                     if (typeof this.custom !== 'undefined') {
@@ -372,9 +393,9 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                     }
                     //渲染Flag
                     var html = [];
-                    var arr = value.toString().split(',');
+                    var arr = value.split(',');
                     $.each(arr, function (i, value) {
-                        value = value.toString();
+                        value = value === null ? '' : value.toString();
                         if (value == '')
                             return true;
                         var color = value && typeof colorArr[value] !== 'undefined' ? colorArr[value] : 'primary';
@@ -412,9 +433,8 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                 var options = table ? table.bootstrapTable('getOptions') : {};
                 var html = [];
                 var url, classname, icon, text, title, extend;
-                var columnIndex = options.columns[0].findIndex(function (element) {
-                    return element === column;
-                });
+                var fieldIndex = column.fieldIndex;
+
                 $.each(buttons, function (i, j) {
                     if (type === 'operate') {
                         if (j.name === 'dragsort' && typeof row[Table.config.dragsortfield] === 'undefined') {
@@ -427,11 +447,7 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                     var attr = table.data(type + "-" + j.name);
                     if (typeof attr === 'undefined' || attr) {
                         url = j.url ? j.url : '';
-                        if (!url.match(/\{(.*?)\}/i)) {
-                            url = url ? url + (url.match(/(\?|&)+/) ? "&ids=" : "/ids/") + row[options.pk] : '';
-                        }
-                        url = Table.api.replaceurl(url, value, row, table);
-                        url = url ? Fast.api.fixurl(url) : 'javascript:;';
+                        url = url ? Fast.api.fixurl(Table.api.replaceurl(url, row, table)) : 'javascript:;';
                         classname = j.classname ? j.classname : 'btn-primary btn-' + name + 'one';
                         icon = j.icon ? j.icon : '';
                         text = j.text ? j.text : '';
@@ -439,14 +455,18 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                         refresh = j.refresh ? 'data-refresh="' + j.refresh + '"' : '';
                         confirm = j.confirm ? 'data-confirm="' + j.confirm + '"' : '';
                         extend = j.extend ? j.extend : '';
-                        html.push('<a href="' + url + '" class="' + classname + '" ' + (confirm ? confirm + ' ' : '') + (refresh ? refresh + ' ' : '') + extend + ' title="' + title + '" data-table-id="' + (table ? table.attr("id") : '') + '" data-column-index="' + columnIndex + '" data-row-index="' + index + '" data-button-index="' + i + '"><i class="' + icon + '"></i>' + (text ? ' ' + text : '') + '</a>');
+                        html.push('<a href="' + url + '" class="' + classname + '" ' + (confirm ? confirm + ' ' : '') + (refresh ? refresh + ' ' : '') + extend + ' title="' + title + '" data-table-id="' + (table ? table.attr("id") : '') + '" data-field-index="' + fieldIndex + '" data-row-index="' + index + '" data-button-index="' + i + '"><i class="' + icon + '"></i>' + (text ? ' ' + text : '') + '</a>');
                     }
                 });
                 return html.join(' ');
             },
             //替换URL中的数据
-            replaceurl: function (url, value, row, table) {
-                url = url.replace(/\{value\}/ig, value);
+            replaceurl: function (url, row, table) {
+                var options = table ? table.bootstrapTable('getOptions') : null;
+                var ids = options ? row[options.pk] : 0;
+                row.ids = ids ? ids : (typeof row.ids !== 'undefined' ? row.ids : 0);
+                //自动添加ids参数
+                url = !url.match(/\{ids\}/i) ? url + (url.match(/(\?|&)+/) ? "&ids=" : "/ids/") + '{ids}' : url;
                 url = url.replace(/\{(.*?)\}/gi, function (matched) {
                     matched = matched.substring(1, matched.length - 1);
                     if (matched.indexOf(".") !== -1) {
@@ -461,12 +481,6 @@ define(['jquery', 'bootstrap', 'moment', 'moment/locale/zh-cn', 'bootstrap-table
                     }
                     return row[matched];
                 });
-                if (table) {
-                    var options = table.bootstrapTable('getOptions');
-                    url = url.replace(/\{ids\}/ig, row[options.pk]);
-                } else {
-                    url = url.replace(/\{ids\}/ig, 0);
-                }
                 return url;
             },
             // 获取选中的条目ID集合
